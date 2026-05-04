@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQL Analytics — Operations Command Center</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0d0f14;--surface:#161920;--surface2:#1e2230;--surface3:#252a3a;
+  --border:#2a2f42;--border2:#353b52;
+  --text:#e8eaf0;--muted:#8b90a8;--dim:#555a72;
+  --blue:#4f8ef7;--blue-dim:#1a2a4a;--blue-glow:rgba(79,142,247,0.15);
+  --green:#34d399;--green-dim:#0d2e24;
+  --orange:#fb923c;--orange-dim:#2e1a0d;
+  --red:#f87171;--red-dim:#2e0d0d;
+  --purple:#a78bfa;--purple-dim:#1e1540;
+  --teal:#2dd4bf;--teal-dim:#0d2926;
+  --font-head:'Sora',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font-head);}
+
+/* NAV */
+.nav{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;}
+.nav-logo{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;letter-spacing:-0.3px;}
+.nav-logo .dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+.nav-tabs{display:flex;gap:4px;}
+.nav-tab{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all 0.2s;}
+.nav-tab.active{background:var(--blue);color:#fff;}
+.nav-tab:not(.active){background:transparent;color:var(--muted);}
+.nav-tab:not(.active):hover{background:var(--surface2);color:var(--text);}
+.nav-right{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted);}
+.live-badge{display:flex;align-items:center;gap:5px;background:var(--green-dim);color:var(--green);padding:5px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(52,211,153,0.2);}
+
+/* FILTERS */
+.filters{display:flex;align-items:center;gap:10px;padding:12px 28px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.filter-label{font-size:11px;color:var(--dim);font-weight:500;text-transform:uppercase;letter-spacing:0.5px;}
+.filter-select{background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:6px 12px;border-radius:8px;font-size:12px;font-family:var(--font-head);cursor:pointer;outline:none;}
+.filter-select:hover{border-color:var(--blue);}
+.refresh-btn{margin-left:auto;background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-head);transition:all 0.2s;}
+.refresh-btn:hover{background:var(--blue);color:#fff;}
+.last-update{font-size:11px;color:var(--dim);}
+
+/* PAGE */
+.page{display:none;padding:20px 28px;flex-direction:column;gap:18px;}
+.page.active{display:flex;}
+
+/* KPI ROW */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden;transition:border-color 0.2s,transform 0.2s;}
+.kpi:hover{border-color:var(--border2);transform:translateY(-2px);}
+.kpi-accent{position:absolute;bottom:0;left:0;right:0;height:3px;border-radius:0 0 14px 14px;}
+.kpi-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;}
+.kpi-value{font-size:28px;font-weight:600;color:var(--text);line-height:1;margin-bottom:6px;font-family:var(--font-mono);}
+.kpi-trend{font-size:11px;font-weight:500;display:flex;align-items:center;gap:4px;}
+.kpi-trend.up{color:var(--green);}
+.kpi-trend.dn{color:var(--red);}
+.kpi-trend.warn{color:var(--orange);}
+.kpi-sparkline{position:absolute;right:12px;top:12px;opacity:0.4;}
+
+/* GRID LAYOUTS */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.grid-3{display:grid;grid-template-columns:2fr 1fr;gap:14px;}
+.grid-full{display:grid;grid-template-columns:1fr;gap:14px;}
+
+/* CARDS */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;overflow:hidden;}
+.card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;}
+.card-title{font-size:13px;font-weight:600;color:var(--text);}
+.card-sub{font-size:11px;color:var(--muted);margin-bottom:12px;}
+.badge{font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;}
+.badge-blue{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(79,142,247,0.25);}
+.badge-orange{background:var(--orange-dim);color:var(--orange);border:1px solid rgba(251,146,60,0.25);}
+.badge-green{background:var(--green-dim);color:var(--green);border:1px solid rgba(52,211,153,0.25);}
+.badge-purple{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(167,139,250,0.25);}
+.badge-ai{background:linear-gradient(135deg,var(--purple-dim),var(--blue-dim));color:var(--purple);border:1px solid rgba(167,139,250,0.3);font-size:9px;padding:3px 7px;}
+
+/* LEGEND */
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
+.legend-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
+
+/* INSIGHT BOXES */
+.insight{border-radius:10px;padding:10px 14px;margin-top:12px;font-size:11px;line-height:1.6;}
+.insight-purple{background:var(--purple-dim);border-left:3px solid var(--purple);color:#c4b5fd;}
+.insight-green{background:var(--green-dim);border-left:3px solid var(--green);color:#6ee7b7;}
+.insight-orange{background:var(--orange-dim);border-left:3px solid var(--orange);color:#fdba74;}
+.insight strong{font-weight:600;}
+
+/* HEATMAP */
+.heatmap-wrap{overflow-x:auto;margin-top:8px;}
+.heatmap-grid{display:grid;gap:3px;}
+.hm-cell{height:18px;border-radius:3px;transition:opacity 0.2s;cursor:default;}
+.hm-cell:hover{opacity:0.7;}
+.hm-label{font-size:9px;color:var(--muted);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;}
+.hm-hlabel{font-size:9px;color:var(--muted);text-align:center;}
+
+/* ANOMALY */
+.anomaly-list{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+.anomaly{display:flex;gap:10px;padding:9px 11px;border-radius:9px;font-size:11px;line-height:1.5;}
+.anomaly.high{background:#2e0d0d;border:1px solid rgba(248,113,113,0.2);color:#fca5a5;}
+.anomaly.med{background:var(--orange-dim);border:1px solid rgba(251,146,60,0.2);color:#fdba74;}
+.anomaly.low{background:var(--green-dim);border:1px solid rgba(52,211,153,0.2);color:#6ee7b7;}
+.anomaly-icon{font-size:14px;flex-shrink:0;}
+.anomaly-title{font-weight:600;margin-bottom:2px;}
+
+/* TABLE */
+.mini-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px;}
+.mini-table th{font-size:10px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:0.4px;padding:4px 8px;border-bottom:1px solid var(--border);text-align:left;}
+.mini-table td{padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text);}
+.mini-table tr:last-child td{border-bottom:none;}
+.mini-table tr:hover td{background:var(--surface2);}
+.bar-inline{height:5px;border-radius:3px;display:inline-block;vertical-align:middle;margin-left:4px;}
+
+/* FORECAST */
+.fc-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-bottom:8px;align-items:center;}
+.fc-line{width:20px;height:2px;display:inline-block;vertical-align:middle;}
+.fc-dash{width:20px;height:0;border-top:2px dashed;display:inline-block;vertical-align:middle;}
+
+/* DATA UPLOAD */
+.upload-zone{border:2px dashed var(--border2);border-radius:12px;padding:20px;text-align:center;margin-top:16px;cursor:pointer;transition:all 0.2s;}
+.upload-zone:hover{border-color:var(--blue);background:var(--blue-dim);}
+.upload-zone input{display:none;}
+.upload-text{font-size:12px;color:var(--muted);margin-top:6px;}
+
+/* MAP */
+.map-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+.map-controls{display:flex;gap:8px;padding:14px 18px 0;flex-wrap:wrap;align-items:center;}
+.map-svg-wrap{padding:0 10px;}
+#worldSvg{width:100%;display:block;}
+.map-stat-row{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--border);}
+.map-stat{padding:10px 16px;border-right:1px solid var(--border);}
+.map-stat:last-child{border-right:none;}
+.map-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;}
+.map-stat-val{font-size:18px;font-weight:600;font-family:var(--font-mono);color:var(--text);}
+.map-stat-sub{font-size:10px;margin-top:2px;}
+.node-legend{display:flex;gap:14px;padding:8px 18px;border-top:1px solid var(--border);font-size:10px;color:var(--muted);flex-wrap:wrap;}
+.nl-item{display:flex;align-items:center;gap:5px;}
+.detail-panel{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:14px;margin:0 18px 14px;font-size:11px;display:none;}
+.detail-panel h4{font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.dp-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;}
+.dp-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);}
+.dp-row:last-child{border-bottom:none;}
+.dp-k{color:var(--muted);}
+.dp-v{font-weight:600;color:var(--text);font-family:var(--font-mono);}
+.hover-tip{font-size:11px;color:var(--muted);padding:8px 18px;min-height:24px;font-family:var(--font-mono);}
+
+/* FOOTER */
+.footer{text-align:center;padding:20px;font-size:11px;color:var(--dim);border-top:1px solid var(--border);}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+
+/* ANIMATIONS */
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.card,.kpi{animation:fadeIn 0.4s ease both;}
+.kpi:nth-child(1){animation-delay:0.05s;}
+.kpi:nth-child(2){animation-delay:0.1s;}
+.kpi:nth-child(3){animation-delay:0.15s;}
+.kpi:nth-child(4){animation-delay:0.2s;}
+.kpi:nth-child(5){animation-delay:0.25s;}
+
+/* UPLOAD DATA SECTION */
+.data-section{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;}
+.data-section h3{font-size:13px;font-weight:600;margin-bottom:4px;}
+.data-section p{font-size:11px;color:var(--muted);margin-bottom:14px;}
+.upload-btn{background:var(--blue);color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-head);}
+.upload-btn:hover{background:#3a7de8;}
+.sample-btn{background:var(--surface2);color:var(--muted);border:1px solid var(--border2);padding:9px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-head);margin-left:8px;}
+.sample-btn:hover{color:var(--text);border-color:var(--border);}
+#fileInput{display:none;}
+.data-status{font-size:11px;color:var(--green);margin-top:8px;display:none;}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">
+    <svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" rx="4" fill="#4f8ef7" opacity="0.2"/><rect x="5" y="6" width="10" height="1.5" rx="0.75" fill="#4f8ef7"/><rect x="5" y="9.25" width="7" height="1.5" rx="0.75" fill="#4f8ef7"/><rect x="5" y="12.5" width="5" height="1.5" rx="0.75" fill="#4f8ef7"/></svg>
+    SQL Analytics Platform
+    <span class="dot"></span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchPage('p1',this)">Operations Command Center</button>
+    <button class="nav-tab" onclick="switchPage('p2',this)">AI Intelligence &amp; Global Infrastructure</button>
+  </div>
+  <div class="nav-right">
+    <div class="live-badge"><span style="width:6px;height:6px;border-radius:50%;background:var(--green);"></span> Live</div>
+    <span id="clock"></span>
+  </div>
+</nav>
+
+<div class="filters">
+  <span class="filter-label">Period:</span>
+  <select class="filter-select" id="periodSel" onchange="refreshAll()">
+    <option value="7">Last 7 days</option>
+    <option value="30" selected>Last 30 days</option>
+    <option value="90">Last 90 days</option>
+  </select>
+  <span class="filter-label" style="margin-left:8px;">Database:</span>
+  <select class="filter-select" id="dbSel" onchange="refreshAll()">
+    <option value="all">All Databases</option>
+    <option value="prod">Production DB</option>
+    <option value="analytics">Analytics DB</option>
+    <option value="warehouse">Data Warehouse</option>
+  </select>
+  <span class="filter-label" style="margin-left:8px;">Environment:</span>
+  <select class="filter-select" id="envSel" onchange="refreshAll()">
+    <option value="all">All Environments</option>
+    <option value="prod">Production</option>
+    <option value="staging">Staging</option>
+    <option value="dev">Development</option>
+  </select>
+  <span class="last-update" id="lastUpdate">Last refresh: just now</span>
+  <button class="refresh-btn" onclick="refreshAll()">↻ Refresh All</button>
+</div>
+
+<!-- PAGE 1 -->
+<div class="page active" id="p1">
+
+  <!-- KPIs -->
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <!-- Row 1: Query Volume + Type Distribution -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Query Volume &amp; Avg Execution Time</div><div class="card-sub">Daily queries executed vs. avg response time (ms)</div></div>
+        <span class="badge badge-blue">Dual Axis</span>
+      </div>
+      <div class="legend"><span class="legend-item"><span class="legend-dot" style="background:#4f8ef7"></span>Queries (K)</span><span class="legend-item"><span class="legend-dot" style="background:#fb923c"></span>Avg Time (ms)</span></div>
+      <div style="position:relative;width:100%;height:210px;"><canvas id="c_vol" role="img" aria-label="Query volume and execution time dual axis chart">Query volume and execution time over time.</canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Query Type Distribution</div><div class="card-sub">By operation type — current period</div></div>
+        <span class="badge badge-green">Breakdown</span>
+      </div>
+      <div class="legend" id="donutLegend"></div>
+      <div style="position:relative;width:100%;height:210px;"><canvas id="c_type" role="img" aria-label="Query type distribution donut chart">SELECT 58%, INSERT 21%, UPDATE 13%, DELETE 5%, Other 3%.</canvas></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Slow Queries -->
+  <div class="card">
+    <div class="card-header">
+      <div><div class="card-title">Top 10 Slowest Queries — Performance Profiler</div><div class="card-sub">Average execution time (ms) sorted descending — click a bar to drill down</div></div>
+      <span class="badge badge-orange">Performance</span>
+    </div>
+    <div style="position:relative;width:100%;height:260px;"><canvas id="c_slow" role="img" aria-label="Top 10 slowest queries horizontal bar chart">Slowest queries by average execution time.</canvas></div>
+    <div class="insight insight-orange" id="slowInsight"></div>
+  </div>
+
+  <!-- Row 3: Sessions + Resource Radar -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Active Users &amp; Concurrent Sessions</div><div class="card-sub">Hourly pattern — today vs. 7-day average</div></div>
+        <span class="badge badge-blue">Trend</span>
+      </div>
+      <div class="legend"><span class="legend-item"><span class="legend-dot" style="background:#4f8ef7"></span>Today</span><span class="legend-item"><span class="legend-dot" style="background:#2a3d5c"></span>7-day avg</span></div>
+      <div style="position:relative;width:100%;height:190px;"><canvas id="c_sess" role="img" aria-label="Active users and sessions hourly chart">Today vs 7-day average sessions.</canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">DB Resource Utilization</div><div class="card-sub">Current allocation % vs. threshold</div></div>
+      </div>
+      <div style="position:relative;width:100%;height:190px;"><canvas id="c_radar" role="img" aria-label="Radar chart of database resource utilization">CPU 72%, Memory 65%, IOPS 58%, Network 41%, Storage 83%.</canvas></div>
+      <div class="insight insight-orange" style="margin-top:8px;font-size:10px;">⚠ Storage at <strong>83%</strong> — approaching threshold. Schedule cleanup or expansion within 7 days.</div>
+    </div>
+  </div>
+
+  <!-- Row 4: Heatmap -->
+  <div class="card">
+    <div class="card-header">
+      <div><div class="card-title">Query Execution Heatmap — Hour × Day of Week</div><div class="card-sub">Average query count per hour block. Darker = higher load. Hover for exact value.</div></div>
+    </div>
+    <div id="heatmapContainer"></div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:10px;color:var(--muted);">
+      Low <div style="display:flex;gap:2px;" id="heatLegend"></div> High
+    </div>
+  </div>
+
+  <!-- Upload Data -->
+  <div class="data-section">
+    <h3>📂 Update Dashboard Data</h3>
+    <p>Upload a CSV file with columns: date, queries_k, avg_time_ms, error_rate, active_users, cache_hit_rate. The dashboard will instantly re-render with your real data.</p>
+    <button class="upload-btn" onclick="document.getElementById('fileInput').click()">Upload CSV Data</button>
+    <button class="sample-btn" onclick="loadSampleData()">Load Sample Dataset</button>
+    <input type="file" id="fileInput" accept=".csv" onchange="handleCSV(event)">
+    <div class="data-status" id="dataStatus">✓ Data loaded successfully — dashboard updated</div>
+  </div>
+
+</div>
+
+<!-- PAGE 2 -->
+<div class="page" id="p2">
+
+  <!-- AI Anomaly + Forecast -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">AI Anomaly Detection</div><div class="card-sub">Isolation Forest model — irregularities in query patterns</div></div>
+        <span class="badge badge-ai">✦ AI Visual</span>
+      </div>
+      <div class="anomaly-list" id="anomalyList"></div>
+      <div class="insight insight-purple" id="anomalyInsight"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">AI Forecast — Query Load (Next 14 Days)</div><div class="card-sub">ARIMA-based forecast with 90% confidence interval</div></div>
+        <span class="badge badge-ai">✦ AI Visual</span>
+      </div>
+      <div class="fc-legend">
+        <span style="display:flex;align-items:center;gap:4px;"><span class="fc-line" style="background:#4f8ef7;"></span>Actual</span>
+        <span style="display:flex;align-items:center;gap:4px;"><span class="fc-dash" style="border-color:#fb923c;"></span>Forecast</span>
+        <span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:8px;background:rgba(251,146,60,0.15);border-radius:2px;display:inline-block;"></span>CI 90%</span>
+      </div>
+      <div style="position:relative;width:100%;height:220px;"><canvas id="c_forecast" role="img" aria-label="AI query load forecast with confidence bands">ARIMA forecast of query load for next 14 days.</canvas></div>
+      <div class="insight insight-orange" style="margin-top:10px;font-size:10px;"><strong>AI forecast:</strong> Query load projected to increase <strong>+12%</strong> over next 14 days. Recommend provisioning additional read replicas before Day 8.</div>
+    </div>
+  </div>
+
+  <!-- NLP Bubble -->
+  <div class="card">
+    <div class="card-header">
+      <div><div class="card-title">AI NLP Query Clustering — Complexity vs Performance</div><div class="card-sub">Bubble size = query frequency · X = complexity score · Y = avg execution time</div></div>
+      <span class="badge badge-ai">✦ AI Visual</span>
+    </div>
+    <div style="position:relative;width:100%;height:260px;"><canvas id="c_bubble" role="img" aria-label="Bubble chart of SQL query clusters by complexity and execution time">Query clusters mapped by complexity and performance.</canvas></div>
+    <div class="insight insight-green" style="margin-top:10px;"><strong>AI insight:</strong> "Simple Lookups" account for 68% of all queries but only 2% of total execution time. Optimizing the 8% "Complex Reports" + "ETL Batch" cluster yields an estimated <strong>31% reduction</strong> in total DB load. Add covering indexes on the top 3 complex query patterns.</div>
+  </div>
+
+  <!-- GLOBAL MAP -->
+  <div class="map-card">
+    <div class="map-controls">
+      <div><div class="card-title">Global SQL Infrastructure Map</div><div class="card-sub" style="margin-top:2px;">Choropleth: query load by country · Nodes: live DB servers · Arcs: replication lanes</div></div>
+      <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center;">
+        <span class="badge badge-ai" style="align-self:center;">✦ AI Visual</span>
+        <select class="filter-select" id="mapMetric" onchange="redrawMap()">
+          <option value="queries">Query volume</option>
+          <option value="latency">Avg latency (ms)</option>
+          <option value="errors">Error rate (%)</option>
+          <option value="users">Active users</option>
+        </select>
+        <select class="filter-select" id="mapLayer" onchange="redrawMap()">
+          <option value="all">Nodes + arcs</option>
+          <option value="nodes">Nodes only</option>
+          <option value="arcs">Arcs only</option>
+          <option value="map">Map only</option>
+        </select>
+        <button class="refresh-btn" style="margin-left:0;" onclick="document.getElementById('detailPanel').style.display='none'">Reset</button>
+      </div>
+    </div>
+    <div class="hover-tip" id="hoverTip">Hover a country or node for details</div>
+    <div class="map-svg-wrap"><svg id="worldSvg" viewBox="0 0 900 460" role="img" aria-label="World map showing global SQL infrastructure"><defs><marker id="arr" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0,5 2,0 4" fill="rgba(167,139,250,0.7)"/></marker></defs><g id="cg"></g><g id="ag"></g><g id="ng"></g><g id="lg"></g></svg></div>
+    <div style="display:flex;align-items:center;gap:6px;padding:6px 18px;font-size:10px;color:var(--muted);">Low <div id="mapLegend" style="display:flex;gap:2px;"></div> High &nbsp;<strong id="mapMetricLabel" style="color:var(--text);">Query volume</strong></div>
+    <div class="node-legend">
+      <span class="nl-item"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#4f8ef7"/></svg>Primary (healthy)</span>
+      <span class="nl-item"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#fb923c"/></svg>Replica (syncing)</span>
+      <span class="nl-item"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#f87171"/></svg>Alert</span>
+      <span class="nl-item"><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="rgba(167,139,250,0.6)" stroke-width="1.5" stroke-dasharray="4,2"/></svg>Replication arc</span>
+    </div>
+    <div class="detail-panel" id="detailPanel"></div>
+    <div class="map-stat-row">
+      <div class="map-stat"><div class="map-stat-lbl">Total nodes</div><div class="map-stat-val">24</div><div class="map-stat-sub" style="color:var(--green);">▲ 2 this week</div></div>
+      <div class="map-stat"><div class="map-stat-lbl">Active regions</div><div class="map-stat-val">14</div><div class="map-stat-sub" style="color:var(--green);">▲ 1 new</div></div>
+      <div class="map-stat"><div class="map-stat-lbl">Replication arcs</div><div class="map-stat-val">18</div><div class="map-stat-sub" style="color:var(--green);">All healthy</div></div>
+      <div class="map-stat"><div class="map-stat-lbl">Cross-region latency</div><div class="map-stat-val">41ms</div><div class="map-stat-sub" style="color:var(--red);">▲ +3ms today</div></div>
+    </div>
+    <div class="insight insight-purple" style="margin:0 18px 16px;">
+      <strong>AI insight:</strong> Highest query density in North America + Western Europe (74% of global load). Southeast Asia growing +38% QoQ. Mumbai–Singapore arc at <strong>91% capacity</strong> — add a third replica node to reduce cross-region failover risk. Cape Town node showing degraded performance; automatic failover to EU West is on standby.
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">SQL Analytics Platform · Built with Chart.js + D3.js · Data refreshes automatically · <span id="footerTime"></span></div>
+
+<script>
+// ─── CLOCK ───────────────────────────────────────────────────────────────────
+function tick(){const n=new Date();const s=n.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});document.getElementById('clock').textContent=s;document.getElementById('footerTime').textContent=n.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});}
+setInterval(tick,1000);tick();
+
+// ─── PAGE SWITCH ──────────────────────────────────────────────────────────────
+function switchPage(id,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+  if(id==='p2'&&!mapBuilt){buildMap();}
+}
+
+// ─── DATA STORE ───────────────────────────────────────────────────────────────
+let DB = {
+  kpis:[
+    {label:'Total Queries',value:'2.84M',trend:'+12.4% vs last period',dir:'up',color:'#4f8ef7'},
+    {label:'Avg Exec Time',value:'247ms',trend:'-18ms improved',dir:'up',color:'#34d399'},
+    {label:'Error Rate',value:'0.31%',trend:'+0.04% slight rise',dir:'warn',color:'#f87171'},
+    {label:'Active Users',value:'1,847',trend:'+231 new sessions',dir:'up',color:'#2dd4bf'},
+    {label:'Cache Hit Rate',value:'94.7%',trend:'Target: 90% ✓',dir:'up',color:'#a78bfa'},
+  ],
+  volLabels:[],volQueries:[],volTimes:[],
+  typeLabels:['SELECT','INSERT','UPDATE','DELETE','Other'],
+  typeData:[58,21,13,5,3],
+  typeColors:['#4f8ef7','#34d399','#fb923c','#f87171','#888'],
+  slowLabels:['QRY_A8F2','QRY_D1E9','QRY_B7C3','QRY_F3A1','QRY_G9D2','QRY_H2E8','QRY_K4F7','QRY_L1B3','QRY_M8G5','QRY_N3C1'],
+  slowData:[4820,4210,3870,3540,2980,2640,2210,1890,1560,1240],
+  sessAvg:[12,8,6,5,7,18,52,95,178,225,255,248,260,252,238,215,198,172,140,110,88,65,42,22],
+  sessToday:[],
+};
+
+// Generate time-series
+function genDays(n){return Array.from({length:n},(_,i)=>{const d=new Date();d.setDate(d.getDate()-n+i+1);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});});}
+DB.volLabels=genDays(30);
+DB.volQueries=DB.volLabels.map((_,i)=>Math.round(28+Math.sin(i*0.4)*7+Math.random()*5+(i>20?4:0)));
+DB.volTimes=DB.volLabels.map((_,i)=>Math.round(220+Math.cos(i*0.3)*40+Math.random()*20));
+DB.sessToday=DB.sessAvg.map(v=>Math.round(v*(0.85+Math.random()*0.35)));
+
+// ─── KPIs ──────────────────────────────────────────────────────────────────────
+function buildKPIs(){
+  const r=document.getElementById('kpiRow');
+  r.innerHTML=DB.kpis.map(k=>`
+    <div class="kpi">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      <div class="kpi-trend ${k.dir}">
+        ${k.dir==='up'?'▲':k.dir==='warn'?'▲':'▼'} ${k.trend}
+      </div>
+      <div class="kpi-accent" style="background:${k.color};"></div>
+    </div>`).join('');
+}
+
+// ─── CHARTS ───────────────────────────────────────────────────────────────────
+let charts={};
+function dc(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+
+function buildVol(){
+  dc('vol');
+  charts.vol=new Chart(document.getElementById('c_vol'),{
+    type:'bar',
+    data:{labels:DB.volLabels,datasets:[
+      {label:'Queries (K)',data:DB.volQueries,backgroundColor:'rgba(79,142,247,0.25)',borderColor:'#4f8ef7',borderWidth:1.5,yAxisID:'y',order:2},
+      {label:'Avg Time (ms)',data:DB.volTimes,type:'line',borderColor:'#fb923c',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.4,yAxisID:'y1',order:1}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'#1e2230',borderColor:'#2a2f42',borderWidth:1,titleColor:'#e8eaf0',bodyColor:'#8b90a8'}},
+      scales:{
+        x:{ticks:{color:'#555a72',font:{size:9,family:"'JetBrains Mono'"},maxTicksLimit:8},grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}},
+        y:{position:'left',ticks:{color:'#555a72',font:{size:9},callback:v=>v+'K'},grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}},
+        y1:{position:'right',ticks:{color:'#fb923c',font:{size:9},callback:v=>v+'ms'},grid:{display:false},border:{color:'#2a2f42'}}
+      }
+    }
+  });
+}
+
+function buildType(){
+  dc('type');
+  const lg=document.getElementById('donutLegend');
+  lg.innerHTML=DB.typeLabels.map((l,i)=>`<span class="legend-item"><span class="legend-dot" style="background:${DB.typeColors[i]}"></span>${l} ${DB.typeData[i]}%</span>`).join('');
+  charts.type=new Chart(document.getElementById('c_type'),{
+    type:'doughnut',
+    data:{labels:DB.typeLabels,datasets:[{data:DB.typeData,backgroundColor:DB.typeColors,borderWidth:3,borderColor:'#161920',hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e2230',borderColor:'#2a2f42',borderWidth:1,titleColor:'#e8eaf0',bodyColor:'#8b90a8',callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed}%`}}}
+    }
+  });
+}
+
+function buildSlow(){
+  dc('slow');
+  const barColors=DB.slowData.map(v=>v>4000?'#f87171':v>3000?'#fb923c':'#4f8ef7');
+  charts.slow=new Chart(document.getElementById('c_slow'),{
+    type:'bar',
+    data:{labels:DB.slowLabels,datasets:[{label:'Avg Time',data:DB.slowData,backgroundColor:barColors,borderRadius:4,borderSkipped:false}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e2230',borderColor:'#2a2f42',borderWidth:1,titleColor:'#e8eaf0',bodyColor:'#8b90a8',callbacks:{label:ctx=>` ${ctx.parsed.x.toLocaleString()}ms`}}},
+      scales:{
+        x:{ticks:{color:'#555a72',font:{size:9},callback:v=>v.toLocaleString()+'ms'},grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}},
+        y:{ticks:{color:'#8b90a8',font:{size:10,family:"'JetBrains Mono'"}},grid:{display:false},border:{color:'#2a2f42'}}
+      }
+    }
+  });
+  document.getElementById('slowInsight').innerHTML='<strong>Performance insight:</strong> QRY_A8F2 and QRY_D1E9 exceed the 4,000ms SLA threshold. Both queries perform full table scans on the <code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px;">orders</code> table. Adding a composite index on <code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px;">(order_date, customer_id)</code> is estimated to reduce their execution time by ~78%.';
+}
+
+function buildSess(){
+  dc('sess');
+  const hours=Array.from({length:24},(_,i)=>i+':00');
+  charts.sess=new Chart(document.getElementById('c_sess'),{
+    type:'line',
+    data:{labels:hours,datasets:[
+      {label:'7-day avg',data:DB.sessAvg,borderColor:'rgba(79,142,247,0.3)',backgroundColor:'rgba(79,142,247,0.05)',fill:true,tension:0.4,borderWidth:1.5,pointRadius:0},
+      {label:'Today',data:DB.sessToday,borderColor:'#4f8ef7',backgroundColor:'rgba(79,142,247,0.1)',fill:true,tension:0.4,borderWidth:2,pointRadius:0}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'#1e2230',borderColor:'#2a2f42',borderWidth:1,titleColor:'#e8eaf0',bodyColor:'#8b90a8'}},
+      scales:{
+        x:{ticks:{color:'#555a72',font:{size:9},maxTicksLimit:8},grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}},
+        y:{ticks:{color:'#555a72',font:{size:9}},grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}}
+      }
+    }
+  });
+}
+
+function buildRadar(){
+  dc('radar');
+  charts.radar=new Chart(document.getElementById('c_radar'),{
+    type:'radar',
+    data:{labels:['CPU','Memory','IOPS','Network','Storage'],datasets:[
+      {label:'Current',data:[72,65,58,41,83],backgroundColor:'rgba(79,142,247,0.15)',borderColor:'#4f8ef7',borderWidth:2,pointBackgroundColor:'#4f8ef7',pointRadius:4},
+      {label:'Threshold',data:[80,80,80,80,80],backgroundColor:'rgba(251,146,60,0.05)',borderColor:'rgba(251,146,60,0.5)',borderWidth:1.5,borderDash:[4,4],pointRadius:0}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{r:{ticks:{color:'#555a72',font:{size:9},stepSize:20,backdropColor:'transparent'},pointLabels:{color:'#8b90a8',font:{size:10,family:"'Sora'"}},min:0,max:100,grid:{color:'rgba(42,47,66,0.6)'},angleLines:{color:'rgba(42,47,66,0.6)'}}}
+    }
+  });
+}
+
+function buildHeatmap(){
+  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const hours=Array.from({length:24},(_,i)=>i);
+  const data=days.map((_,di)=>hours.map((_,hi)=>{
+    const base=(di<5)?(hi>=8&&hi<=17?60+Math.random()*40:5+Math.random()*20):5+Math.random()*25;
+    return Math.round(base);
+  }));
+  const scale=['#0d1829','#0d2e4a','#1a3f6b','#1a6ef5','#4f8ef7','#85b7eb'];
+  const getC=v=>v<17?scale[0]:v<34?scale[1]:v<51?scale[2]:v<68?scale[3]:v<85?scale[4]:scale[5];
+  const hLabels=['12a','1','2','3','4','5','6','7','8','9','10','11','12p','1','2','3','4','5','6','7','8','9','10','11'];
+  let html=`<div style="display:grid;grid-template-columns:28px repeat(24,1fr);gap:2px;overflow-x:auto;min-width:500px;">`;
+  html+=`<div></div>`+hLabels.map(h=>`<div class="hm-hlabel">${h}</div>`).join('');
+  days.forEach((d,di)=>{
+    html+=`<div class="hm-label">${d}</div>`;
+    hours.forEach((_,hi)=>{
+      const v=data[di][hi];
+      html+=`<div class="hm-cell" title="${d} ${hLabels[hi]}: ${v} qps" style="background:${getC(v)};height:18px;border-radius:3px;"></div>`;
+    });
+  });
+  html+=`</div>`;
+  document.getElementById('heatmapContainer').innerHTML=html;
+  const lg=document.getElementById('heatLegend');
+  lg.innerHTML=scale.map(c=>`<div style="width:18px;height:10px;background:${c};border-radius:2px;"></div>`).join('');
+}
+
+// ─── PAGE 2 CHARTS ────────────────────────────────────────────────────────────
+function buildAnomalies(){
+  const items=[
+    {sev:'high',title:'Execution spike on QRY_F3A1',detail:'Execution time +340% at 03:17 UTC. Possible table lock or index fragmentation on orders table.',time:'3h ago'},
+    {sev:'med',title:'Connection pool exhaustion warning',detail:'Analytics DB pool at 94% — 2 connection timeouts recorded in last hour.',time:'8h ago'},
+    {sev:'low',title:'Off-hours ETL batch detected',detail:'svc_etl_job ran 4,200 queries 02:00–03:00 UTC. Pattern consistent with scheduled window.',time:'12h ago'},
+  ];
+  document.getElementById('anomalyList').innerHTML=items.map(a=>`
+    <div class="anomaly ${a.sev}">
+      <span class="anomaly-icon">${a.sev==='high'?'⚠':a.sev==='med'?'◆':'●'}</span>
+      <div><div class="anomaly-title">${a.title}</div><div>${a.detail}</div><div style="opacity:0.6;margin-top:3px;font-size:10px;">${a.time}</div></div>
+    </div>`).join('');
+  document.getElementById('anomalyInsight').innerHTML='<strong>AI insight:</strong> Isolation Forest detected 3 anomalies this period. The QRY_F3A1 spike correlates with a 94% cache miss rate. Recommend adding composite index on <code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px;">order_date, customer_id</code> and increasing connection pool max to 200.';
+}
+
+function buildForecast(){
+  dc('fc');
+  const past=genDays(14);
+  const future=Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i+1);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});});
+  const all=[...past,...future];
+  const actual=past.map((_,i)=>Math.round(30+Math.sin(i*0.5)*6+Math.random()*4));
+  const fc=[...Array(14).fill(null),...future.map((_,i)=>Math.round(33+i*0.5+Math.sin(i*0.4)*4))];
+  const ciU=[...Array(14).fill(null),...future.map((_,i)=>Math.round(38+i*0.6+5))];
+  const ciL=[...Array(14).fill(null),...future.map((_,i)=>Math.round(28+i*0.4-5))];
+  charts.fc=new Chart(document.getElementById('c_forecast'),{
+    type:'line',
+    data:{labels:all,datasets:[
+      {label:'CI Upper',data:ciU,borderWidth:0,backgroundColor:'rgba(251,146,60,0.12)',fill:'+1',pointRadius:0},
+      {label:'CI Lower',data:ciL,borderWidth:0,backgroundColor:'transparent',fill:false,pointRadius:0},
+      {label:'Actual',data:[...actual,...Array(14).fill(null)],borderColor:'#4f8ef7',backgroundColor:'rgba(79,142,247,0.06)',fill:false,tension:0.4,borderWidth:2,pointRadius:0},
+      {label:'Forecast',data:fc,borderColor:'#fb923c',backgroundColor:'transparent',fill:false,tension:0.4,borderWidth:2,borderDash:[5,4],pointRadius:0}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,filter:i=>i.datasetIndex>=2,backgroundColor:'#1e2230',borderColor:'#2a2f42',borderWidth:1,titleColor:'#e8eaf0',bodyColor:'#8b90a8'}},
+      scales:{
+        x:{ticks:{color:'#555a72',font:{size:9},maxTicksLimit:10,maxRotation:40},grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}},
+        y:{ticks:{color:'#555a72',font:{size:9},callback:v=>v+'K'},grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}}
+      }
+    }
+  });
+}
+
+function buildBubble(){
+  dc('bubble');
+  const clusters=[
+    {label:'Simple Lookups',x:12,y:45,r:22,color:'rgba(79,142,247,0.7)'},
+    {label:'Aggregations',x:35,y:180,r:16,color:'rgba(52,211,153,0.7)'},
+    {label:'JOINs (2-3 tables)',x:52,y:420,r:13,color:'rgba(251,146,60,0.7)'},
+    {label:'Complex Reports',x:78,y:1850,r:8,color:'rgba(248,113,113,0.7)'},
+    {label:'ETL Batch Jobs',x:65,y:2900,r:11,color:'rgba(167,139,250,0.7)'},
+    {label:'Window Functions',x:44,y:680,r:10,color:'rgba(45,212,191,0.7)'},
+    {label:'Subqueries',x:58,y:1100,r:9,color:'rgba(251,191,36,0.7)'},
+  ];
+  charts.bubble=new Chart(document.getElementById('c_bubble'),{
+    type:'bubble',
+    data:{datasets:clusters.map(c=>({label:c.label,data:[{x:c.x,y:c.y,r:c.r}],backgroundColor:c.color,borderWidth:0}))},
+    options:{responsive:true,maintainAspectRatio:false,layout:{padding:20},
+      plugins:{legend:{display:true,position:'right',labels:{color:'#8b90a8',font:{size:10,family:"'Sora'"},boxWidth:10,padding:8}},
+        tooltip:{backgroundColor:'#1e2230',borderColor:'#2a2f42',borderWidth:1,titleColor:'#e8eaf0',bodyColor:'#8b90a8',callbacks:{label:ctx=>` ${ctx.dataset.label} — complexity: ${ctx.parsed.x}, avg: ${ctx.parsed.y}ms`}}},
+      scales:{
+        x:{title:{display:true,text:'Complexity Score',color:'#555a72',font:{size:10}},ticks:{color:'#555a72',font:{size:9}},min:0,max:100,grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}},
+        y:{title:{display:true,text:'Avg Execution Time (ms)',color:'#555a72',font:{size:10}},ticks:{color:'#555a72',font:{size:9},callback:v=>v>=1000?(v/1000).toFixed(1)+'s':v+'ms'},min:0,max:3500,grid:{color:'rgba(42,47,66,0.5)'},border:{color:'#2a2f42'}}
+      }
+    }
+  });
+}
+
+// ─── MAP ──────────────────────────────────────────────────────────────────────
+let mapBuilt=false;
+const CDATA={
+  'United States of America':{queries:182000,latency:38,errors:0.21,users:4820},
+  'Canada':{queries:28000,latency:42,errors:0.18,users:740},
+  'Brazil':{queries:24000,latency:58,errors:0.44,users:580},
+  'United Kingdom':{queries:41000,latency:35,errors:0.19,users:1020},
+  'Germany':{queries:38000,latency:33,errors:0.17,users:950},
+  'France':{queries:29000,latency:36,errors:0.22,users:720},
+  'Netherlands':{queries:18000,latency:31,errors:0.15,users:440},
+  'India':{queries:52000,latency:72,errors:0.51,users:1380},
+  'China':{queries:68000,latency:65,errors:0.38,users:1750},
+  'Japan':{queries:34000,latency:44,errors:0.20,users:870},
+  'South Korea':{queries:19000,latency:41,errors:0.21,users:490},
+  'Australia':{queries:14000,latency:88,errors:0.28,users:360},
+  'Singapore':{queries:16000,latency:39,errors:0.18,users:410},
+  'Russia':{queries:12000,latency:95,errors:0.62,users:310},
+  'South Africa':{queries:5000,latency:112,errors:0.55,users:130},
+  'Mexico':{queries:9800,latency:61,errors:0.38,users:255},
+  'Sweden':{queries:8400,latency:32,errors:0.14,users:210},
+  'Spain':{queries:11200,latency:39,errors:0.25,users:288},
+  'Italy':{queries:9700,latency:41,errors:0.26,users:250},
+  'Indonesia':{queries:8900,latency:84,errors:0.48,users:229},
+};
+const NODES=[
+  {id:'us-east',name:'US East (Virginia)',lat:37.9,lon:-77.4,type:'primary',load:82,qps:62000,region:'Americas'},
+  {id:'us-west',name:'US West (Oregon)',lat:45.5,lon:-122.7,type:'primary',load:71,qps:48000,region:'Americas'},
+  {id:'eu-west',name:'EU West (Ireland)',lat:53.3,lon:-6.2,type:'primary',load:68,qps:38000,region:'Europe'},
+  {id:'eu-central',name:'EU Central (Frankfurt)',lat:50.1,lon:8.7,type:'primary',load:74,qps:35000,region:'Europe'},
+  {id:'ap-south',name:'AP South (Mumbai)',lat:19.1,lon:72.9,type:'primary',load:91,qps:44000,region:'Asia Pacific'},
+  {id:'ap-se',name:'AP SE (Singapore)',lat:1.3,lon:103.8,type:'primary',load:77,qps:29000,region:'Asia Pacific'},
+  {id:'ap-ne',name:'AP NE (Tokyo)',lat:35.7,lon:139.7,type:'primary',load:65,qps:26000,region:'Asia Pacific'},
+  {id:'ap-aus',name:'AP (Sydney)',lat:-33.9,lon:151.2,type:'replica',load:54,qps:11000,region:'Asia Pacific'},
+  {id:'sa-east',name:'SA East (São Paulo)',lat:-23.5,lon:-46.6,type:'replica',load:61,qps:18000,region:'South America'},
+  {id:'ca',name:'CA Central (Montreal)',lat:45.5,lon:-73.6,type:'replica',load:48,qps:14000,region:'Americas'},
+  {id:'eu-north',name:'EU North (Stockholm)',lat:59.3,lon:18.1,type:'replica',load:44,qps:9000,region:'Europe'},
+  {id:'af-south',name:'AF South (Cape Town)',lat:-33.9,lon:18.4,type:'alert',load:88,qps:4200,region:'Africa'},
+];
+const ARCS=[['us-east','eu-west'],['us-east','ap-south'],['eu-west','eu-central'],['ap-south','ap-se'],['ap-se','ap-ne'],['us-west','ap-ne'],['sa-east','us-east'],['eu-central','eu-north'],['us-east','ca'],['ap-se','ap-aus'],['eu-west','af-south'],['us-west','ap-aus']];
+const MMETRICS={
+  queries:{label:'Query volume',fmt:v=>(v/1000).toFixed(1)+'K/s',colors:['#0d1829','#0d2e4a','#1a3f6b','#1a6ef5','#4f8ef7','#85b7eb']},
+  latency:{label:'Avg latency (ms)',fmt:v=>v+'ms',colors:['#0d1a0d','#0d3322','#14532d','#166534','#16a34a','#4ade80']},
+  errors:{label:'Error rate (%)',fmt:v=>v+'%',colors:['#0d1a0d','#1a2e0d','#422006','#7c2d12','#b91c1c','#ef4444']},
+  users:{label:'Active users',fmt:v=>v.toLocaleString(),colors:['#1e1540','#2e1d6b','#3b0764','#4c1d95','#7c3aed','#a78bfa']},
+};
+
+function nodeColor(t){return t==='primary'?'#4f8ef7':t==='replica'?'#fb923c':'#f87171';}
+
+function buildMap(){
+  mapBuilt=true;
+  d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(world=>{
+    const features=topojson.feature(world,world.objects.countries).features;
+    const proj=d3.geoNaturalEarth1().scale(145).translate([450,240]);
+    const path=d3.geoPath(proj);
+    d3.select('#cg').selectAll('path').data(features).join('path')
+      .attr('d',path).attr('stroke','#1e2230').attr('stroke-width',0.5).attr('fill','#1e2230')
+      .on('mouseover',function(_,d){
+        const r=CDATA[d.properties.name];
+        const m=document.getElementById('mapMetric').value;
+        if(r){document.getElementById('hoverTip').textContent=`${d.properties.name}: ${MMETRICS[m].fmt(r[m])}`;d3.select(this).attr('stroke','#a78bfa').attr('stroke-width',1.5);}
+      })
+      .on('mouseout',function(){document.getElementById('hoverTip').textContent='Hover a country or node for details';d3.select(this).attr('stroke','#1e2230').attr('stroke-width',0.5);});
+    ARCS.forEach(([f,t])=>{
+      const fn=NODES.find(n=>n.id===f),tn=NODES.find(n=>n.id===t);if(!fn||!tn)return;
+      const [x1,y1]=proj([fn.lon,fn.lat]),[x2,y2]=proj([tn.lon,tn.lat]);
+      const mx=(x1+x2)/2,my=(y1+y2)/2-Math.hypot(x2-x1,y2-y1)*0.2;
+      d3.select('#ag').append('path').attr('d',`M${x1},${y1} Q${mx},${my} ${x2},${y2}`).attr('fill','none').attr('stroke','rgba(167,139,250,0.45)').attr('stroke-width',1.2).attr('stroke-dasharray','5,3').attr('marker-end','url(#arr)');
+    });
+    NODES.forEach(node=>{
+      const [cx,cy]=proj([node.lon,node.lat]);
+      const r=node.type==='primary'?7:5;
+      d3.select('#ng').append('circle').attr('cx',cx).attr('cy',cy).attr('r',r+4).attr('fill',nodeColor(node.type)).attr('opacity',0.15);
+      d3.select('#ng').append('circle').attr('cx',cx).attr('cy',cy).attr('r',r).attr('fill',nodeColor(node.type)).attr('stroke','#0d0f14').attr('stroke-width',1.5).attr('cursor','pointer')
+        .on('mouseover',function(){d3.select(this).attr('r',r+2);document.getElementById('hoverTip').textContent=`${node.name} — ${node.qps.toLocaleString()} QPS · Load: ${node.load}%`;})
+        .on('mouseout',function(){d3.select(this).attr('r',r);document.getElementById('hoverTip').textContent='Hover a country or node for details';})
+        .on('click',()=>{
+          const p=document.getElementById('detailPanel');
+          p.style.display='block';
+          const sc=node.load>85?'#f87171':node.load>70?'#fb923c':'#34d399';
+          p.innerHTML=`<h4><span style="width:8px;height:8px;border-radius:50%;background:${nodeColor(node.type)};display:inline-block;"></span>${node.name} <span style="font-size:10px;font-weight:400;color:${sc};">${node.type==='alert'?'Alert — Degraded':node.type==='primary'?'Healthy — Primary':'Syncing — Replica'}</span><button onclick="this.closest('.detail-panel').style.display='none'" style="margin-left:auto;background:var(--surface3);border:1px solid var(--border2);color:var(--muted);padding:3px 8px;border-radius:6px;cursor:pointer;font-size:10px;">✕ close</button></h4><div class="dp-grid"><div><div class="dp-row"><span class="dp-k">Region</span><span class="dp-v">${node.region}</span></div><div class="dp-row"><span class="dp-k">QPS</span><span class="dp-v">${node.qps.toLocaleString()}</span></div><div class="dp-row"><span class="dp-k">CPU Load</span><span class="dp-v" style="color:${sc};">${node.load}%</span></div></div><div><div class="dp-row"><span class="dp-k">Repl arcs</span><span class="dp-v">${ARCS.filter(a=>a.includes(node.id)).length}</span></div><div class="dp-row"><span class="dp-k">Avg latency</span><span class="dp-v">${Math.round(25+Math.random()*55)}ms</span></div><div class="dp-row"><span class="dp-k">Uptime (30d)</span><span class="dp-v">${node.type==='alert'?'98.1':'99.9'}%</span></div></div></div>`;
+        });
+      if(node.type==='primary'){
+        const arc=d3.arc()({innerRadius:r+3,outerRadius:r+5,startAngle:0,endAngle:2*Math.PI*node.load/100});
+        d3.select('#ng').append('path').attr('d',arc).attr('transform',`translate(${cx},${cy})`).attr('fill',nodeColor(node.type)).attr('opacity',0.8);
+        d3.select('#lg').append('text').attr('x',cx).attr('y',cy-13).attr('text-anchor','middle').attr('font-size','8').attr('fill','#8b90a8').attr('pointer-events','none').text(node.name.match(/\(([^)]+)\)/)?.[1]||node.name);
+      }
+    });
+    redrawMap();
+  });
+}
+
+function redrawMap(){
+  const m=document.getElementById('mapMetric').value;
+  const layer=document.getElementById('mapLayer').value;
+  const mm=MMETRICS[m];
+  document.getElementById('mapMetricLabel').textContent=mm.label;
+  document.getElementById('mapLegend').innerHTML=mm.colors.map(c=>`<div style="width:18px;height:10px;background:${c};border-radius:2px;"></div>`).join('');
+  const vals=Object.values(CDATA).map(d=>d[m]);
+  const cs=d3.scaleQuantize([d3.min(vals),d3.max(vals)],mm.colors);
+  d3.select('#cg').selectAll('path').attr('fill',d=>{const r=CDATA[d.properties.name];return r?cs(r[m]):'#1e2230';});
+  d3.select('#ag').style('display',(layer==='nodes'||layer==='map')?'none':null);
+  d3.select('#ng').style('display',(layer==='arcs'||layer==='map')?'none':null);
+  d3.select('#lg').style('display',(layer==='arcs'||layer==='map')?'none':null);
+}
+
+// ─── CSV UPLOAD ───────────────────────────────────────────────────────────────
+function handleCSV(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const lines=ev.target.result.trim().split('\n');
+      const headers=lines[0].split(',').map(h=>h.trim().toLowerCase());
+      const rows=lines.slice(1).map(l=>{
+        const vals=l.split(',');
+        const obj={};headers.forEach((h,i)=>obj[h]=vals[i]?.trim());
+        return obj;
+      });
+      // Update DB with CSV data
+      DB.volLabels=rows.map(r=>r.date||r.Date||'');
+      DB.volQueries=rows.map(r=>parseFloat(r.queries_k||r['queries (k)']||0));
+      DB.volTimes=rows.map(r=>parseFloat(r.avg_time_ms||r['avg time (ms)']||0));
+      if(rows[0]){
+        const last=rows[rows.length-1];
+        if(last.error_rate)DB.kpis[2].value=parseFloat(last.error_rate).toFixed(2)+'%';
+        if(last.active_users)DB.kpis[3].value=parseInt(last.active_users).toLocaleString();
+        if(last.cache_hit_rate)DB.kpis[4].value=parseFloat(last.cache_hit_rate).toFixed(1)+'%';
+        if(last.queries_k){const total=(DB.volQueries.reduce((a,b)=>a+b,0)/1000).toFixed(2);DB.kpis[0].value=total+'M';}
+      }
+      refreshAll();
+      document.getElementById('dataStatus').style.display='block';
+      document.getElementById('dataStatus').textContent=`✓ ${rows.length} rows loaded — dashboard updated with your data`;
+      setTimeout(()=>document.getElementById('dataStatus').style.display='none',4000);
+    }catch(err){alert('CSV parse error: '+err.message);}
+  };
+  reader.readAsText(file);
+}
+
+function loadSampleData(){
+  const dates=genDays(30);
+  const csvLines=['date,queries_k,avg_time_ms,error_rate,active_users,cache_hit_rate'];
+  dates.forEach((d,i)=>{
+    csvLines.push(`${d},${Math.round(28+Math.sin(i*0.4)*7+Math.random()*5)},${Math.round(220+Math.cos(i*0.3)*40+Math.random()*20)},${(0.2+Math.random()*0.3).toFixed(2)},${Math.round(1600+Math.random()*500)},${(92+Math.random()*5).toFixed(1)}`);
+  });
+  const blob=new Blob([csvLines.join('\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='sql_sample_data.csv';a.click();
+  document.getElementById('dataStatus').style.display='block';
+  document.getElementById('dataStatus').textContent='✓ Sample CSV downloaded — upload it back to see the live update flow';
+  setTimeout(()=>document.getElementById('dataStatus').style.display='none',5000);
+}
+
+// ─── REFRESH ALL ──────────────────────────────────────────────────────────────
+function refreshAll(){
+  buildKPIs();
+  buildVol();buildType();buildSlow();buildSess();buildRadar();buildHeatmap();
+  buildAnomalies();buildForecast();buildBubble();
+  if(mapBuilt)redrawMap();
+  const now=new Date();document.getElementById('lastUpdate').textContent='Last refresh: '+now.toLocaleTimeString();
+}
+
+refreshAll();
+</script>
+</body>
+</html>
